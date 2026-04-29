@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リフティングゲーム | ういです！ Portfolio</title>
+    <meta name="description" content="簡単なサッカーリフティングゲームです。">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/css/style.css">
+    <style>
+        body {
+            overflow: hidden; /* ゲーム中はスクロール禁止 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .game-header {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+        }
+        .back-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 30px;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            height: 600px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            cursor: crosshair;
+        }
+        #score-board {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            z-index: 5;
+            pointer-events: none;
+        }
+        #ball {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle at 30% 30%, #ffffff, #d4d4d4);
+            border-radius: 50%;
+            box-shadow: inset -5px -5px 15px rgba(0,0,0,0.3), 5px 15px 20px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            user-select: none;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        #ball:active {
+            transform: scale(0.9);
+        }
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #game-over.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        #game-over h2 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        #final-score {
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+        }
+        .restart-btn {
+            padding: 12px 30px;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .restart-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(79, 172, 254, 0.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="blob-bg"></div>
+    <div class="blob-bg blob-2"></div>
+
+    <div class="game-header">
+        <a href="index.html" class="back-btn">← ポートフォリオに戻る</a>
+    </div>
+
+    <div id="game-container">
+        <div id="score-board">0</div>
+        <div id="ball">⚽️</div>
+        <div id="game-over">
+            <h2>Game Over!</h2>
+            <div id="final-score">Score: 0</div>
+            <button class="restart-btn" onclick="startGame()">もう一度遊ぶ</button>
+        </div>
+    </div>
+
+    <script>
+        const ball = document.getElementById('ball');
+        const container = document.getElementById('game-container');
+        const scoreBoard = document.getElementById('score-board');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreText = document.getElementById('final-score');
+
+        let score = 0;
+        let ballY = 100;
+        let ballX = 170; // 400/2 - 30
+        let velocityY = 0;
+        let velocityX = 0;
+        let gravity = 0.4;
+        let isGameOver = false;
+        let gameLoopId;
+
+        // Container bounds
+        const containerHeight = 600;
+        const containerWidth = 400;
+        const ballSize = 60;
+
+        function startGame() {
+            score = 0;
+            scoreBoard.innerText = score;
+            ballY = 50;
+            ballX = (containerWidth - ballSize) / 2;
+            velocityY = 0;
+            velocityX = (Math.random() - 0.5) * 4; // ランダムな横方向の初速
+            isGameOver = false;
+            gameOverScreen.classList.remove('active');
+            
+            if(gameLoopId) cancelAnimationFrame(gameLoopId);
+            gameLoop();
+        }
+
+        function gameLoop() {
+            if (isGameOver) return;
+
+            velocityY += gravity;
+            ballY += velocityY;
+            ballX += velocityX;
+
+            // 壁でのバウンド（横）
+            if (ballX <= 0) {
+                ballX = 0;
+                velocityX = -velocityX * 0.8;
+            } else if (ballX >= containerWidth - ballSize) {
+                ballX = containerWidth - ballSize;
+                velocityX = -velocityX * 0.8;
+            }
+
+            // 地面に落ちたらゲームオーバー
+            if (ballY >= containerHeight - ballSize) {
+                endGame();
+            }
+
+            ball.style.top = ballY + 'px';
+            ball.style.left = ballX + 'px';
+            
+            // 回転エフェクト
+            ball.style.transform = `rotate(${ballX * 2}deg)`;
+
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            isGameOver = true;
+            ballY = containerHeight - ballSize;
+            ball.style.top = ballY + 'px';
+            finalScoreText.innerText = 'Score: ' + score;
+            gameOverScreen.classList.add('active');
+        }
+
+        // ボールをクリック（またはタップ）した時の処理
+        ball.addEventListener('mousedown', hitBall);
+        ball.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // ダブルタップズーム防止
+            hitBall(e);
+        });
+
+        function hitBall(e) {
+            if (isGameOver) return;
+            
+            score++;
+            scoreBoard.innerText = score;
+            
+            // 上に跳ね返す
+            velocityY = -10 - (Math.random() * 2);
+            
+            // クリックした位置によって横方向の力を変える
+            const ballRect = ball.getBoundingClientRect();
+            let clickX;
+            if (e.touches) {
+                clickX = e.touches[0].clientX;
+            } else {
+                clickX = e.clientX;
+            }
+            
+            const ballCenterX = ballRect.left + ballSize / 2;
+            const diffX = clickX - ballCenterX;
+            
+            velocityX = -diffX * 0.2; // クリックした反対方向に少し飛ぶ
+            
+            // エフェクト
+            ball.style.transform = 'scale(0.8)';
+            setTimeout(() => {
+                if(!isGameOver) ball.style.transform = `scale(1) rotate(${ballX * 2}deg)`;
+            }, 100);
+        }
+
+        // 初期スタート
+        startGame();
+    </script>
+</body>
+</html>
