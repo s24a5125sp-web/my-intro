@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今日の計画表 | スケジュールプランナー</title>
+    <meta name="description" content="1日のスケジュールを時間指定で視覚的かつ直感的に整理できる、見やすく美しいスケジュールプランナーアプリです。">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="./assets/css/planner.css">
+</head>
+<body>
+    <!-- Background animations -->
+    <div class="blob-bg"></div>
+    <div class="blob-bg blob-2"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-group">
+                <span class="logo-icon">📅</span>
+                <div>
+                    <h1>ういの計画表</h1>
+                </div>
+            </div>
+            <a href="index.html" class="back-btn">
+                <span>🏠</span> ポートフォリオに戻る
+            </a>
+        </header>
+
+        <!-- Main App Content -->
+        <main class="app-grid">
+            <!-- Left Column: Input Form & Task List -->
+            <section class="left-column">
+                <!-- Task Entry Glass Panel -->
+                <div class="glass-panel">
+                    <h2 class="panel-title"><span>✏️</span> 予定を追加・編集</h2>
+                    <form id="task-form">
+                        <div class="form-group">
+                            <label for="task-title-input">タイトル</label>
+                            <input type="text" id="task-title-input" class="input-control" placeholder="例: サッカーの練習、勉強" required maxlength="40">
+                        </div>
+
+                        <div class="form-group">
+                            <label>時間指定</label>
+                            <div class="time-range">
+                                <div>
+                                    <label for="start-time" style="font-size: 0.75rem; margin-bottom: 0.25rem;">開始</label>
+                                    <input type="time" id="start-time" class="input-control" value="09:00" required>
+                                </div>
+                                <div>
+                                    <label for="end-time" style="font-size: 0.75rem; margin-bottom: 0.25rem;">終了</label>
+                                    <input type="time" id="end-time" class="input-control" value="10:00" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>カテゴリー</label>
+                            <div class="color-picker-group">
+                                <span class="category-badge active" data-cat="study">勉強</span>
+                                <span class="category-badge" data-cat="sports">運動</span>
+                                <span class="category-badge" data-cat="hobby">趣味</span>
+                                <span class="category-badge" data-cat="life">生活</span>
+                                <span class="category-badge" data-cat="sleep">睡眠</span>
+                                <span class="category-badge" data-cat="other">その他</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="task-desc">メモ・詳細（任意）</label>
+                            <textarea id="task-desc" class="input-control" rows="2" placeholder="持ち物や具体的な内容など" style="resize: none; font-size: 0.9rem;"></textarea>
+                        </div>
+
+                        <button type="submit" id="submit-btn" class="submit-btn">
+                            <span>➕</span> 予定を追加する
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Sidebar Task Status List -->
+                <div class="glass-panel" style="margin-top: 1.5rem;">
+                    <h2 class="panel-title" style="margin-bottom: 1rem;"><span>📋</span> 予定リスト</h2>
+                    <div id="task-list-container" class="task-list-container">
+                        <!-- Tasks dynamically inserted here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Vertical Visual Timeline -->
+            <section class="right-column">
+                <div class="glass-panel">
+                    <div class="timeline-header-meta">
+                        <h2 class="panel-title" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;"><span>⏰</span> タイムライン</h2>
+                        <div id="current-date" class="current-date-display">2026年6月4日(木)</div>
+                    </div>
+                    
+                    <!-- Timeline Scrollable viewport -->
+                    <div id="timeline-scroll-container" class="scroll-container">
+                        <div class="timeline-grid">
+                            
+                            <!-- Current time indicator red line -->
+                            <div id="time-indicator" class="time-indicator" style="display: none;"></div>
+
+                            <!-- 24 background grid slots -->
+                            <div class="time-slot" style="top: 0px;" data-time="00:00"></div>
+                            <div class="time-slot" style="top: 80px;" data-time="01:00"></div>
+                            <div class="time-slot" style="top: 160px;" data-time="02:00"></div>
+                            <div class="time-slot" style="top: 240px;" data-time="03:00"></div>
+                            <div class="time-slot" style="top: 320px;" data-time="04:00"></div>
+                            <div class="time-slot" style="top: 400px;" data-time="05:00"></div>
+                            <div class="time-slot" style="top: 480px;" data-time="06:00"></div>
+                            <div class="time-slot" style="top: 560px;" data-time="07:00"></div>
+                            <div class="time-slot" style="top: 640px;" data-time="08:00"></div>
+                            <div class="time-slot" style="top: 720px;" data-time="09:00"></div>
+                            <div class="time-slot" style="top: 800px;" data-time="10:00"></div>
+                            <div class="time-slot" style="top: 880px;" data-time="11:00"></div>
+                            <div class="time-slot" style="top: 960px;" data-time="12:00"></div>
+                            <div class="time-slot" style="top: 1040px;" data-time="13:00"></div>
+                            <div class="time-slot" style="top: 1120px;" data-time="14:00"></div>
+                            <div class="time-slot" style="top: 1200px;" data-time="15:00"></div>
+                            <div class="time-slot" style="top: 1280px;" data-time="16:00"></div>
+                            <div class="time-slot" style="top: 1360px;" data-time="17:00"></div>
+                            <div class="time-slot" style="top: 1440px;" data-time="18:00"></div>
+                            <div class="time-slot" style="top: 1520px;" data-time="19:00"></div>
+                            <div class="time-slot" style="top: 1600px;" data-time="20:00"></div>
+                            <div class="time-slot" style="top: 1680px;" data-time="21:00"></div>
+                            <div class="time-slot" style="top: 1760px;" data-time="22:00"></div>
+                            <div class="time-slot" style="top: 1840px;" data-time="23:00"></div>
+                            
+                            <!-- Bottom anchor line representing 24:00/00:00 end of grid -->
+                            <div class="time-slot" style="top: 1920px; border: none;" data-time="24:00"></div>
+
+                            <!-- Tasks will be dynamically rendered here as timeline-cards -->
+                            
+                            <!-- Empty State inside scroll container (z-index below indicator) -->
+                            <div id="empty-state" class="timeline-empty-state" style="display: none;">
+                                <div class="empty-icon">📅</div>
+                                <p>予定が登録されていません</p>
+                                <p style="font-size: 0.8rem; margin-top: 0.25rem;">左側のフォームから予定を追加してください</p>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Script -->
+    <script src="./assets/js/planner.js"></script>
+</body>
+</html>
