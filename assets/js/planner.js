@@ -1,14 +1,27 @@
 /* planner.js */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // State
+    // --- State ---
     let tasks = [];
     let exams = [];
+    let studyLogs = [];
     let activeCategory = 'study';
     let editingTaskId = null;
     let notifiedTasks = {};
 
-    // DOM Elements - Tasks
+    // --- Timer State ---
+    let timerInterval = null;
+    let timerSeconds = 0;
+    let timerRunning = false;
+    let timerMode = 'stopwatch'; // 'stopwatch' or 'pomodoro'
+    let currentTimerTask = null; // { id, title, category }
+
+    // --- Chart Objects ---
+    let targetChart = null;
+    let categoryChart = null;
+    let weeklyChart = null;
+
+    // --- DOM Elements - Tasks ---
     const taskForm = document.getElementById('task-form');
     const titleInput = document.getElementById('task-title-input');
     const startTimeInput = document.getElementById('start-time');
@@ -24,18 +37,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const scrollContainer = document.getElementById('timeline-scroll-container');
     const emptyState = document.getElementById('empty-state');
 
-    // DOM Elements - Exams
+    // --- DOM Elements - Exams ---
     const examForm = document.getElementById('exam-form');
     const examTitleInput = document.getElementById('exam-title-input');
     const examDateInput = document.getElementById('exam-date-input');
     const examListContainer = document.getElementById('exam-list-container');
 
-    // DOM Elements - Global
+    // --- DOM Elements - Timer & Analytics ---
+    const timerDisplay = document.getElementById('timer-display');
+    const timerStartBtn = document.getElementById('timer-start');
+    const timerPauseBtn = document.getElementById('timer-pause');
+    const timerStopBtn = document.getElementById('timer-stop');
+    const currentTimerTaskLabel = document.getElementById('current-timer-task');
+    const modeStopwatchBtn = document.getElementById('mode-stopwatch');
+    const modePomodoroBtn = document.getElementById('mode-pomodoro');
+    const studyLogContainer = document.getElementById('study-log-container');
+
+    // --- DOM Elements - Global & Tabs ---
     const enableNotificationsBtn = document.getElementById('enable-notifications-btn');
     const toastContainer = document.getElementById('toast-container');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
 
     // Layout configuration
     const HOUR_HEIGHT = 80; // 1 hour = 80px in planner.css
+
+    // --- Tab Navigation Logic ---
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-tab');
+            
+            // Switch Active Button
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Switch Active Pane
+            tabPanes.forEach(pane => {
+                if (pane.getAttribute('id') === `tab-${targetTab}`) {
+                    pane.classList.add('active');
+                } else {
+                    pane.classList.remove('active');
+                }
+            });
+
+            // Initialize charts if switching to analytics tab
+            if (targetTab === 'analytics') {
+                updateAnalyticsDashboard();
+            }
+        });
+    });
 
     // --- Notification Helpers ---
     function initNotifications() {
@@ -72,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Play synthesized sound via Web Audio API (No external asset needed)
+    // Play synthesized sound via Web Audio API
     function playNotificationSound() {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -140,7 +190,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         toast.querySelector('.toast-close').addEventListener('click', dismissToast);
         
-        // Auto-dismiss after 8 seconds if no custom actions (like snooze/complete)
         if (!actions) {
             setTimeout(dismissToast, 8000);
         }
@@ -163,26 +212,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Date & Time Helper Functions ---
-
-    // Update Current Date Display
     function updateDateDisplay() {
         const now = new Date();
         const options = { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' };
         currentDateDisplay.textContent = now.toLocaleDateString('ja-JP', options);
     }
 
-    // Convert time string "HH:MM" to minutes from 00:00
     function timeStringToMinutes(timeStr) {
         const [hours, minutes] = timeStr.split(':').map(Number);
         return hours * 60 + minutes;
     }
 
-    // Convert minutes from 00:00 to absolute Y position (pixels)
     function minutesToYPosition(minutes) {
         return (minutes / 60) * HOUR_HEIGHT;
     }
 
-    // Update Current Time Indicator position
     function updateTimeIndicator() {
         const now = new Date();
         const hours = now.getHours();
@@ -194,7 +238,6 @@ document.addEventListener('DOMContentLoaded', () => {
         timeIndicator.style.display = 'block';
     }
 
-    // Scroll to current time position
     function scrollToCurrentTime() {
         const now = new Date();
         const hours = now.getHours();
@@ -213,11 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 tasks = JSON.parse(storedTasks);
             } catch (e) {
-                console.error("Failed to parse stored tasks:", e);
                 tasks = [];
             }
         } else {
-            // Default sample tasks
             tasks = [
                 {
                     id: 'sample-1',
@@ -259,11 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 exams = JSON.parse(storedExams);
             } catch (e) {
-                console.error("Failed to parse stored exams:", e);
                 exams = [];
             }
         } else {
-            // Sample exam
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 3);
             tomorrow.setHours(9, 0, 0, 0);
@@ -278,6 +317,40 @@ document.addEventListener('DOMContentLoaded', () => {
             saveExams();
         }
 
+        // Load Study Logs
+        const storedStudyLogs = localStorage.getItem('ui_planner_study_logs');
+        if (storedStudyLogs) {
+            try {
+                studyLogs = JSON.parse(storedStudyLogs);
+            } catch (e) {
+                studyLogs = [];
+            }
+        } else {
+            // Seed sample logs for past week to showcase analytics
+            const now = new Date();
+            studyLogs = [];
+            for (let i = 6; i >= 1; i--) {
+                const logDate = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+                studyLogs.push({
+                    id: `log-seed-${i}-1`,
+                    taskTitle: '数学I 微積分基礎',
+                    category: 'study',
+                    durationMinutes: Math.floor(Math.random() * 60) + 40,
+                    timestamp: logDate.toISOString()
+                });
+                if (Math.random() > 0.4) {
+                    studyLogs.push({
+                        id: `log-seed-${i}-2`,
+                        taskTitle: '英単語暗記＆リーディング',
+                        category: 'study',
+                        durationMinutes: Math.floor(Math.random() * 40) + 20,
+                        timestamp: logDate.toISOString()
+                    });
+                }
+            }
+            saveStudyLogs();
+        }
+
         // Load Notified log
         const storedLog = localStorage.getItem('ui_planner_notified_log');
         if (storedLog) {
@@ -289,26 +362,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function saveTasks() {
-        localStorage.setItem('ui_planner_tasks', JSON.stringify(tasks));
-    }
-
-    function saveExams() {
-        localStorage.setItem('ui_planner_exams', JSON.stringify(exams));
-    }
-
-    function saveNotifiedLog() {
-        localStorage.setItem('ui_planner_notified_log', JSON.stringify(notifiedTasks));
-    }
-
-    // --- Category Badge Handlers ---
-    categoryBadges.forEach(badge => {
-        badge.addEventListener('click', () => {
-            categoryBadges.forEach(b => b.classList.remove('active'));
-            badge.classList.add('active');
-            activeCategory = badge.getAttribute('data-cat');
-        });
-    });
+    function saveTasks() { localStorage.setItem('ui_planner_tasks', JSON.stringify(tasks)); }
+    function saveExams() { localStorage.setItem('ui_planner_exams', JSON.stringify(exams)); }
+    function saveStudyLogs() { localStorage.setItem('ui_planner_study_logs', JSON.stringify(studyLogs)); }
+    function saveNotifiedLog() { localStorage.setItem('ui_planner_notified_log', JSON.stringify(notifiedTasks)); }
 
     // --- Timeline Layout Overlap Resolution ---
     function resolveOverlaps(tasksList) {
@@ -373,7 +430,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentHour = now.getHours();
         const currentMin = now.getMinutes();
         const currentMinsTotal = currentHour * 60 + currentMin;
-        const todayStr = now.toDateString(); // To track days
+        const todayStr = now.toDateString();
 
         tasks.forEach(task => {
             if (task.completed || !task.reminderTime || task.reminderTime === 'none') return;
@@ -382,12 +439,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const startMins = timeStringToMinutes(task.startTime);
             const triggerMins = startMins - reminderOffset;
 
-            // Trigger when current time hits trigger time (and before task end)
             if (currentMinsTotal >= triggerMins && currentMinsTotal < startMins + 5) {
                 const logKey = `${task.id}_${triggerMins}_${todayStr}`;
                 
                 if (!notifiedTasks[logKey]) {
-                    // Mark as notified immediately to prevent loops
                     notifiedTasks[logKey] = true;
                     saveNotifiedLog();
 
@@ -395,10 +450,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const titleText = `予定の通知: ${task.title}`;
                     const bodyText = `${task.startTime}から予定「${task.title}」が始まります。(${timeLabel})`;
 
-                    // Trigger Native Push Notification
                     showWebNotification(titleText, bodyText);
 
-                    // Trigger Beautiful In-App Toast with actions
                     showToast(titleText, bodyText, [
                         {
                             text: '✅ 完了にする',
@@ -417,31 +470,376 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function snoozeTask(task, minutes) {
-        // Find existing task
         const taskIdx = tasks.findIndex(t => t.id === task.id);
         if (taskIdx === -1) return;
 
-        // Calculate new start/end time shifted by snooze minutes
         const now = new Date();
         now.setMinutes(now.getMinutes() + minutes);
         
         const pad = n => String(n).padStart(2, '0');
         const newStart = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
         
-        // Duration of original task
         const duration = timeStringToMinutes(task.endTime) - timeStringToMinutes(task.startTime);
         const endNow = new Date(now.getTime() + duration * 60000);
         const newEnd = `${pad(endNow.getHours())}:${pad(endNow.getMinutes())}`;
 
-        // Update task times so it triggers again
         tasks[taskIdx].startTime = newStart;
         tasks[taskIdx].endTime = newEnd;
-        tasks[taskIdx].reminderTime = '0'; // Trigger immediately when newStart is reached
+        tasks[taskIdx].reminderTime = '0';
 
         saveTasks();
         render();
 
         showToast('🔁 スヌーズ設定', `${minutes}分後に再度リマインドします。`);
+    }
+
+    // --- Study Tracker Timer Logic ---
+    modeStopwatchBtn.addEventListener('click', () => {
+        if (timerRunning) return;
+        timerMode = 'stopwatch';
+        modeStopwatchBtn.classList.add('active');
+        modePomodoroBtn.classList.remove('active');
+        timerSeconds = 0;
+        updateTimerDisplay();
+    });
+
+    modePomodoroBtn.addEventListener('click', () => {
+        if (timerRunning) return;
+        timerMode = 'pomodoro';
+        modePomodoroBtn.classList.add('active');
+        modeStopwatchBtn.classList.remove('active');
+        timerSeconds = 25 * 60; // 25 minutes
+        updateTimerDisplay();
+    });
+
+    timerStartBtn.addEventListener('click', () => {
+        if (timerRunning) return;
+        timerRunning = true;
+        timerStartBtn.disabled = true;
+        timerPauseBtn.disabled = false;
+        timerStopBtn.disabled = false;
+        
+        // Mode buttons disabled during execution
+        modeStopwatchBtn.disabled = true;
+        modePomodoroBtn.disabled = true;
+
+        if (timerMode === 'pomodoro' && timerSeconds === 0) {
+            timerSeconds = 25 * 60;
+        }
+
+        timerInterval = setInterval(() => {
+            if (timerMode === 'stopwatch') {
+                timerSeconds++;
+            } else { // pomodoro
+                timerSeconds--;
+                if (timerSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    timerRunning = false;
+                    playNotificationSound();
+                    showToast('⏳ ポモドーロ完了！', '25分間の勉強が完了しました。休憩を挟みましょう！');
+                    saveStudySession();
+                    resetTimerUI();
+                    return;
+                }
+            }
+            updateTimerDisplay();
+        }, 1000);
+    });
+
+    timerPauseBtn.addEventListener('click', () => {
+        if (!timerRunning) return;
+        clearInterval(timerInterval);
+        timerRunning = false;
+        timerStartBtn.disabled = false;
+        timerPauseBtn.disabled = true;
+    });
+
+    timerStopBtn.addEventListener('click', () => {
+        clearInterval(timerInterval);
+        saveStudySession();
+        resetTimerUI();
+    });
+
+    function resetTimerUI() {
+        timerRunning = false;
+        timerInterval = null;
+        timerStartBtn.disabled = false;
+        timerPauseBtn.disabled = true;
+        timerStopBtn.disabled = true;
+        modeStopwatchBtn.disabled = false;
+        modePomodoroBtn.disabled = false;
+        
+        timerSeconds = timerMode === 'pomodoro' ? 25 * 60 : 0;
+        updateTimerDisplay();
+    }
+
+    function updateTimerDisplay() {
+        const hrs = Math.floor(timerSeconds / 3600);
+        const mins = Math.floor((timerSeconds % 3600) / 60);
+        const secs = timerSeconds % 60;
+        
+        const pad = n => String(n).padStart(2, '0');
+        timerDisplay.textContent = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+    }
+
+    function saveStudySession() {
+        let elapsedSeconds = 0;
+        if (timerMode === 'stopwatch') {
+            elapsedSeconds = timerSeconds;
+        } else {
+            elapsedSeconds = (25 * 60) - timerSeconds;
+        }
+
+        const elapsedMins = Math.floor(elapsedSeconds / 60);
+        if (elapsedMins < 1) {
+            showToast('⚠️ 記録なし', '1分未満の学習時間は集計されません。');
+            return;
+        }
+
+        const taskTitle = currentTimerTask ? currentTimerTask.title : '自主学習 ✏️';
+        const category = currentTimerTask ? currentTimerTask.category : 'study';
+
+        const newLog = {
+            id: 'log-' + Date.now().toString(),
+            taskTitle: taskTitle,
+            category: category,
+            durationMinutes: elapsedMins,
+            timestamp: new Date().toISOString()
+        };
+
+        studyLogs.push(newLog);
+        saveStudyLogs();
+        
+        // If tied to a task, optionally complete it
+        if (currentTimerTask && currentTimerTask.id) {
+            toggleTaskComplete(currentTimerTask.id);
+        }
+
+        showToast('📈 学習ログを保存しました', `「${taskTitle}」: ${elapsedMins}分間`);
+        
+        // Refresh analytics dashboard and history view
+        updateAnalyticsDashboard();
+    }
+
+    function startTimerForTask(taskId, taskTitle, category) {
+        // Pause current timer if running
+        if (timerRunning) {
+            clearInterval(timerInterval);
+        }
+
+        currentTimerTask = { id: taskId, title: taskTitle, category: category };
+        currentTimerTaskLabel.textContent = `学習中: ${taskTitle}`;
+        currentTimerTaskLabel.style.color = `var(--cat-${category})`;
+        
+        // Auto select stopwatch
+        timerMode = 'stopwatch';
+        modeStopwatchBtn.classList.add('active');
+        modePomodoroBtn.classList.remove('active');
+        timerSeconds = 0;
+        updateTimerDisplay();
+
+        // Switch to Analytics tab
+        const analyticsTabBtn = document.querySelector('.tab-btn[data-tab="analytics"]');
+        if (analyticsTabBtn) {
+            analyticsTabBtn.click();
+        }
+
+        // Auto Start
+        timerStartBtn.click();
+    }
+
+    // --- Analytics Dashboard (Chart.js implementation) ---
+    function formatMinutesToHours(minutes) {
+        const hrs = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return hrs > 0 ? `${hrs}時間 ${mins}分` : `${mins}分`;
+    }
+
+    function updateAnalyticsDashboard() {
+        const now = new Date();
+        const todayStr = now.toDateString();
+
+        // --- 1. Get today's study minutes ---
+        const todayLogs = studyLogs.filter(log => {
+            const logDate = new Date(log.timestamp);
+            return logDate.toDateString() === todayStr;
+        });
+
+        const todayTotalMins = todayLogs.reduce((acc, curr) => acc + curr.durationMinutes, 0);
+        const targetMins = 180; // 3 hours target
+        const percentage = Math.min(Math.round((todayTotalMins / targetMins) * 100), 100);
+
+        // Update Text
+        document.getElementById('donut-center-text').textContent = `${percentage}%`;
+        document.getElementById('target-summary-text').textContent = `目標: 3時間 | 実績: ${formatMinutesToHours(todayTotalMins)}`;
+
+        // Donut Chart
+        const targetCtx = document.getElementById('targetChart').getContext('2d');
+        if (targetChart) targetChart.destroy();
+        targetChart = new Chart(targetCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['学習時間', '残り目標'],
+                datasets: [{
+                    data: [todayTotalMins, Math.max(0, targetMins - todayTotalMins)],
+                    backgroundColor: ['#2ecc71', 'rgba(255, 255, 255, 0.05)'],
+                    borderColor: ['rgba(46, 204, 113, 0.5)', 'rgba(255, 255, 255, 0.05)'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+
+        // --- 2. Category Pie Chart ---
+        const catData = {};
+        todayLogs.forEach(log => {
+            catData[log.category] = (catData[log.category] || 0) + log.durationMinutes;
+        });
+
+        // If no records today, populate with empty feedback
+        const catCtx = document.getElementById('categoryChart').getContext('2d');
+        if (categoryChart) categoryChart.destroy();
+
+        if (todayTotalMins === 0) {
+            categoryChart = new Chart(catCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['データなし'],
+                    datasets: [{
+                        data: [1],
+                        backgroundColor: ['rgba(255, 255, 255, 0.05)'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        } else {
+            const labels = Object.keys(catData).map(k => getCategoryName(k));
+            const data = Object.values(catData);
+            const bgColors = Object.keys(catData).map(k => getComputedStyle(document.documentElement).getPropertyValue(`--cat-${k}`).trim() || '#ffffff');
+
+            categoryChart = new Chart(catCtx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: bgColors,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#a0aec0',
+                                font: { family: 'Noto Sans JP', size: 11 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- 3. Weekly Bar Chart (Last 7 Days) ---
+        const weeklyData = [];
+        const weeklyLabels = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(now.getDate() - i);
+            weeklyLabels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+            
+            const dayLogs = studyLogs.filter(log => {
+                const logDate = new Date(log.timestamp);
+                return logDate.toDateString() === d.toDateString();
+            });
+            const dayMins = dayLogs.reduce((acc, curr) => acc + curr.durationMinutes, 0);
+            weeklyData.push(dayMins);
+        }
+
+        const weeklyCtx = document.getElementById('weeklyChart').getContext('2d');
+        if (weeklyChart) weeklyChart.destroy();
+        weeklyChart = new Chart(weeklyCtx, {
+            type: 'bar',
+            data: {
+                labels: weeklyLabels,
+                datasets: [{
+                    label: '勉強時間 (分)',
+                    data: weeklyData,
+                    backgroundColor: 'rgba(79, 172, 254, 0.5)',
+                    borderColor: '#4facfe',
+                    borderWidth: 1.5,
+                    borderRadius: 6,
+                    hoverBackgroundColor: 'rgba(79, 172, 254, 0.8)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#a0aec0' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#a0aec0' }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // --- 4. Render Log History List ---
+        studyLogContainer.innerHTML = '';
+        if (todayLogs.length === 0) {
+            studyLogContainer.innerHTML = `
+                <div style="text-align: center; color: var(--text-secondary); padding: 2rem 0; font-size: 0.85rem;">
+                    📝 本日の学習履歴はありません。<br>タイマーを使って学習を記録しましょう！
+                </div>
+            `;
+        } else {
+            todayLogs.reverse().forEach(log => {
+                const logItem = document.createElement('div');
+                logItem.className = 'study-log-item';
+                logItem.style.borderLeftColor = `var(--cat-${log.category})`;
+
+                const logTime = new Date(log.timestamp).toLocaleTimeString('ja-JP', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                logItem.innerHTML = `
+                    <div class="log-meta">
+                        <span class="log-title">${escapeHTML(log.taskTitle)}</span>
+                        <span class="log-time-details">🕓 ${logTime} • ${getCategoryName(log.category)}</span>
+                    </div>
+                    <span class="log-duration">${log.durationMinutes} 分</span>
+                `;
+                studyLogContainer.appendChild(logItem);
+            });
+        }
     }
 
     // --- UI Renderers ---
@@ -467,9 +865,14 @@ document.addEventListener('DOMContentLoaded', () => {
                  const reminderLabel = task.reminderTime === 'none' ? '通知なし' : 
                                        (task.reminderTime === '0' ? '開始時' : `${task.reminderTime}分前`);
 
+                 const isStudy = task.category === 'study';
+
                  card.innerHTML = `
                      <div class="task-info">
-                         <div class="task-title">${escapeHTML(task.title)}</div>
+                         <div class="task-title">
+                             ${escapeHTML(task.title)}
+                             ${isStudy && !task.completed ? `<button class="task-start-timer-btn" title="学習タイマーを開始">⏱️ スタート</button>` : ''}
+                         </div>
                          <div class="task-time-meta">
                              <span>⏰ ${task.startTime} - ${task.endTime}</span>
                              <span>•</span>
@@ -490,10 +893,28 @@ document.addEventListener('DOMContentLoaded', () => {
                  `;
 
                  // Attach Event Listeners
-                 card.querySelector('.task-info').addEventListener('click', () => editTask(task.id));
-                 card.querySelector('.edit-btn').addEventListener('click', () => editTask(task.id));
-                 card.querySelector('.toggle-btn').addEventListener('click', () => toggleTaskComplete(task.id));
-                 card.querySelector('.delete-btn').addEventListener('click', () => deleteTask(task.id));
+                 card.querySelector('.task-info').addEventListener('click', (e) => {
+                     // Check if clicked the start timer inline button
+                     if (e.target.classList.contains('task-start-timer-btn')) {
+                         e.stopPropagation();
+                         startTimerForTask(task.id, task.title, task.category);
+                     } else {
+                         editTask(task.id);
+                     }
+                 });
+                 
+                 card.querySelector('.edit-btn').addEventListener('click', (e) => {
+                     e.stopPropagation();
+                     editTask(task.id);
+                 });
+                 card.querySelector('.toggle-btn').addEventListener('click', (e) => {
+                     e.stopPropagation();
+                     toggleTaskComplete(task.id);
+                 });
+                 card.querySelector('.delete-btn').addEventListener('click', (e) => {
+                     e.stopPropagation();
+                     deleteTask(task.id);
+                 });
 
                  taskListContainer.appendChild(card);
              });
@@ -502,7 +923,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const timelineCards = timelineGrid.querySelectorAll('.timeline-card');
         timelineCards.forEach(card => card.remove());
 
-        // Construct task list to render on the timeline (incorporating virtual exam placeholders)
         const timelineTasks = [...tasks];
         
         // Find exams scheduled for today
@@ -513,11 +933,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 examDate.getMonth() === today.getMonth() &&
                 examDate.getFullYear() === today.getFullYear()) {
                 
-                // Construct a virtual study slot starting 1.5 hours before the exam, or representing the exam itself
                 const startHour = String(examDate.getHours()).padStart(2, '0');
                 const startMin = String(examDate.getMinutes()).padStart(2, '0');
                 
-                // Set duration to 90 mins for the exam window
                 const endMinsTotal = examDate.getHours() * 60 + examDate.getMinutes() + 90;
                 const endHour = String(Math.floor(endMinsTotal / 60) % 24).padStart(2, '0');
                 const endMin = String(endMinsTotal % 60).padStart(2, '0');
@@ -600,7 +1018,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Sort by closest date
         exams.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         const now = new Date();
@@ -610,24 +1027,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const diffMs = examDate - now;
             
             let cardClass = 'exam-card';
-            let threatLevel = 'low';
             let isUrgent = false;
 
             if (diffMs <= 0) {
                 cardClass += ' threat-high';
-                threatLevel = 'high';
             } else if (diffMs <= 3 * 24 * 60 * 60 * 1000) { // 3 days
                 cardClass += ' threat-high';
-                threatLevel = 'high';
                 isUrgent = true;
             } else if (diffMs <= 7 * 24 * 60 * 60 * 1000) { // 7 days
                 cardClass += ' threat-medium';
-                threatLevel = 'medium';
             } else {
                 cardClass += ' threat-low';
             }
 
-            // Calculate countdown fields
             let countdownText = '';
             if (diffMs <= 0) {
                 countdownText = '<span style="color: #ff4b2b; font-weight: 800;">🔥 試験当日・終了</span>';
@@ -678,7 +1090,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ` : ''}
             `;
 
-            // Attach handlers
             card.querySelector('.delete-exam-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 deleteExam(exam.id);
@@ -696,8 +1107,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Task Operations (CRUD) ---
-
-    // Add or Update Task
     taskForm.addEventListener('submit', (e) => {
         e.preventDefault();
 
@@ -721,7 +1130,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (editingTaskId) {
-            // Update mode
             const taskIndex = tasks.findIndex(t => t.id === editingTaskId);
             if (taskIndex !== -1) {
                 tasks[taskIndex] = {
@@ -738,7 +1146,6 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.innerHTML = `<span>➕</span> 予定を追加する`;
             submitBtn.style.background = 'linear-gradient(135deg, #f857a6 0%, #ff5858 100%)';
         } else {
-            // Create mode
             const newTask = {
                 id: Date.now().toString(),
                 title,
@@ -756,7 +1163,6 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
         taskForm.reset();
         
-        // Reset category selection
         activeCategory = 'study';
         categoryBadges.forEach(b => {
             b.classList.remove('active');
@@ -765,7 +1171,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Focus adjustment
         const yPos = minutesToYPosition(startMins);
         scrollContainer.scrollTo({
             top: yPos - 100,
@@ -825,7 +1230,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Exam Operations (CRUD) ---
-
     examForm.addEventListener('submit', (e) => {
         e.preventDefault();
         
@@ -846,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         exams.push(newExam);
         saveExams();
         renderExams();
-        render(); // Update timeline virtual exam card
+        render(); // Update timeline
         examForm.reset();
 
         showToast('📝 試験を追加しました', `${title} のカウントダウンを開始します。`);
@@ -864,7 +1268,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Pre-fill study plan for an exam
     function prepareStudyPlan(examTitle) {
         titleInput.value = `${examTitle}の勉強 ✏️`;
         activeCategory = 'study';
@@ -875,16 +1278,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 b.classList.remove('active');
             }
         });
-        reminderTimeInput.value = '10'; // Default to 10 mins before
+        reminderTimeInput.value = '10';
         descInput.value = `次の試験に向けた直前勉強: ${examTitle}`;
         
-        // Scroll to form
+        // Switch to Planner tab
+        const plannerTabBtn = document.querySelector('.tab-btn[data-tab="planner"]');
+        if (plannerTabBtn) {
+            plannerTabBtn.click();
+        }
+
         titleInput.focus();
         showToast('✍️ プランナー連動', '試験勉強の予定フォームを自動入力しました。時間を選んで登録してください。');
     }
 
     // --- Helpers ---
-
     function getCategoryName(cat) {
         const names = {
             'study': '勉強 📝',
@@ -919,10 +1326,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateTimeIndicator();
     scrollToCurrentTime();
     
-    // Engine Tick (every 1 second for precise countdowns and reminder triggers)
+    // Engine Tick (every 1 second)
     setInterval(() => {
         updateTimeIndicator();
         checkReminders();
-        renderExams(); // Update countdown seconds real-time
+        renderExams(); // Update countdown seconds
     }, 1000);
 });
